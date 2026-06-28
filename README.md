@@ -72,6 +72,33 @@ README.md                - תיעוד הפרויקט
 
 ---
 ---
+
+# ▶️ התקנה והרצה
+
+כדי להריץ את הפרויקט יש ליצור הרשאות אישיות ב־Google Cloud.
+
+שלבי ההתקנה:
+
+1. צור Google Cloud Project.
+2. הפעל את Gmail API ואת Google Calendar API.
+3. צור OAuth Client והורד את הקובץ `credentials.json`.
+4. שמור את הקובץ `credentials.json` בתיקיית הפרויקט.
+5. התקן את התלויות:
+
+```bash
+uv sync
+```
+
+6. הרץ את הפרויקט:
+
+```bash
+uv run main.py
+```
+
+7. בהרצה הראשונה ייפתח חלון אימות של Google, ולאחר ההתחברות ייווצר באופן אוטומטי הקובץ `token.json`.
+
+> **הערה:** מטעמי אבטחת מידע, הקבצים `credentials.json` ו־`token.json` אינם כלולים במאגר GitHub.
+
 # 📷 תיעוד פעולת המערכת
 
 ### מבנה הפרויקט
