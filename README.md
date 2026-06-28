@@ -72,13 +72,14 @@ skill/
 ---
 
 # 📷 צילומי מסך
+
 ## 📷 מבנה הפרויקט
 
 ![Project Structure](Project%20Structure.png)
 
 ---
 
-## 📧 טיוטת תשובה ב־Gmail
+## 📧 יצירת טיוטת תשובה ב־Gmail
 
 ![Gmail Draft](Gmail%20Draft.png)
 
@@ -86,7 +87,7 @@ skill/
 
 ## 💻 הרצת המערכת ב־PowerShell
 
-![PowerShell](PowerShell.png)
+![PowerShell](POWERSHELL.png)
 
 # 🔐 אבטחת מידע
 
