@@ -202,10 +202,10 @@ def create_unavailable_draft(gmail_service, original_email: dict[str, str], deta
     msg.set_content(
         "שלום,\n\n"
         "תודה על ההזמנה לפגישה.\n"
-        "בדקתי את היומן שלי ולצערי איני פנוי במועד שהוצע.\n"
-        "אשמח לתאם מועד חלופי.\n\n"
+        "בדקנו את היומן שלנו ולצערנו איננו פנויים במועד שהוצע.\n"
+        "נשמח לתאם מועד חלופי.\n\n"
         "בברכה,\n"
-        "סהר\n"
+        "יפת משולם ואדיר נחמיאס\n"
     )
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -216,7 +216,6 @@ def create_unavailable_draft(gmail_service, original_email: dict[str, str], deta
         .execute()
     )
     return draft["id"]
-
 
 def run_agent():
     creds = get_credentials()
