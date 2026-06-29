@@ -27,7 +27,7 @@ CREDENTIALS_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
 MY_EMAIL = "yefetm123456@gmail.com"
 
-anthropic_client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from env
+anthropic_client = anthropic.Anthropic(api_key="sk-ant-...")  # החלף את הטקסט במפתח שלך
 
 
 # ─────────────────────────────────────────────
