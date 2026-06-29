@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import base64
-import json
 import re
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Optional
 
-import anthropic
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -26,8 +24,6 @@ SCOPES = [
 CREDENTIALS_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
 MY_EMAIL = "yefetm123456@gmail.com"
-
-anthropic_client = anthropic.Anthropic(api_key="sk-ant-...")  # החלף את הטקסט במפתח שלך
 
 
 # ─────────────────────────────────────────────
@@ -106,119 +102,40 @@ def _extract_body_text(payload: dict[str, Any]) -> str:
 
 
 # ─────────────────────────────────────────────
-#  LLM – step 1: detect meeting request
+#  Step 1: Detect meeting request (keywords)
 # ─────────────────────────────────────────────
-def detect_meeting_request_llm(email: dict[str, str]) -> bool:
-    """
-    Ask Claude whether the email contains a meeting / appointment request.
-    Returns True / False.
-    Falls back to keyword matching if the API call fails.
-    """
-    prompt = f"""You are an assistant that classifies emails.
-
-Email subject: {email['subject']}
-Email body:
-{email['body'][:1500]}
-
-Task: Decide whether this email contains a request or invitation for a meeting,
-appointment, call, or any scheduled gathering (in any language, including Hebrew).
-
-Reply with ONLY one word: YES or NO.
-"""
-    try:
-        response = anthropic_client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=10,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        answer = response.content[0].text.strip().upper()
-        print(f"[LLM detect] → {answer}")
-        return answer.startswith("YES")
-    except Exception as e:
-        print(f"[LLM detect fallback] {e}")
-        return _detect_meeting_keywords(email)
-
-
-def _detect_meeting_keywords(email: dict[str, str]) -> bool:
-    """Fallback keyword-based detection."""
+def detect_meeting_request(email: dict[str, str]) -> bool:
     text = f"{email['subject']} {email['body']}".lower()
     keywords = [
         "meeting", "calendar", "zoom", "teams", "appointment",
         "schedule", "call", "invite", "conference",
         "פגישה", "זום", "תיאום", "להיפגש", "ישיבה", "דיון", "הזמנה",
+        "נפגש", "להיפגש", "קפה", "שיחה", "ראיון",
     ]
-    return any(kw in text for kw in keywords)
+    matched = [kw for kw in keywords if kw in text]
+    if matched:
+        print(f"[detect] matched keywords: {matched}")
+        return True
+    return False
 
 
 # ─────────────────────────────────────────────
-#  LLM – step 2: extract meeting details
+#  Step 2: Extract meeting details (regex)
 # ─────────────────────────────────────────────
-def extract_meeting_details_llm(email: dict[str, str]) -> dict[str, Any]:
-    """
-    Ask Claude to extract structured meeting details from the email.
-    Returns a dict with keys: title, date, time, location, participants.
-    Falls back to regex if the API call fails.
-    """
-    today = datetime.now().strftime("%Y-%m-%d")
-    prompt = f"""You are an assistant that extracts meeting details from emails.
-
-Today's date: {today}
-Email subject: {email['subject']}
-Sender: {email['from']}
-Email body:
-{email['body'][:2000]}
-
-Extract the following information and return ONLY a valid JSON object (no markdown, no explanation):
-{{
-  "title": "<meeting title or subject>",
-  "date": "<date in DD/MM/YYYY format, or null if not found>",
-  "time": "<time in HH:MM format (24h), or null if not found>",
-  "location": "<location, platform (Zoom/Teams/etc), or 'Not specified'>",
-  "participants": ["<sender email or name>"]
-}}
-
-Rules:
-- If date is relative (e.g. "next Tuesday", "ביום שלישי הקרוב"), resolve it to an absolute date based on today ({today}).
-- If time is written in words (e.g. "noon", "at 3 in the afternoon", "בצהריים"), convert to HH:MM.
-- If any field is missing or unclear, use null.
-- Output ONLY the JSON object.
-"""
-    try:
-        response = anthropic_client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        # Strip markdown fences if present
-        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-        details = json.loads(raw)
-        details["source_message_id"] = email["id"]
-        details.setdefault("participants", [email["from"], MY_EMAIL])
-        if MY_EMAIL not in details["participants"]:
-            details["participants"].append(MY_EMAIL)
-        print(f"[LLM extract] {json.dumps(details, ensure_ascii=False, indent=2)}")
-        return details
-    except Exception as e:
-        print(f"[LLM extract fallback] {e}")
-        return _extract_meeting_details_regex(email)
-
-
-def _extract_meeting_details_regex(email: dict[str, str]) -> dict[str, Any]:
-    """Fallback regex-based extraction."""
+def extract_meeting_details(email: dict[str, str]) -> dict[str, Any]:
     text = f"{email['subject']}\n{email['body']}"
 
     date_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", text)
     time_match = re.search(r"(\d{1,2}:\d{2})", text)
 
     location = "Not specified"
-    for kw in ["Zoom", "Teams", "Google Meet", "Meet", "חדר", "משרד", "קריה", "zoom", "teams"]:
+    for kw in ["Zoom", "Teams", "Google Meet", "Meet", "zoom", "teams",
+               "חדר", "משרד", "קריה", "אונליין", "online"]:
         if kw in text:
             location = kw
             break
 
-    return {
+    details = {
         "title": email["subject"] or "Meeting from Gmail",
         "date": date_match.group(1) if date_match else None,
         "time": time_match.group(1) if time_match else None,
@@ -227,41 +144,26 @@ def _extract_meeting_details_regex(email: dict[str, str]) -> dict[str, Any]:
         "source_message_id": email["id"],
     }
 
+    print(f"[extract] date={details['date']} time={details['time']} location={details['location']}")
+    return details
+
 
 # ─────────────────────────────────────────────
-#  LLM – step 3: compose unavailable reply
+#  Step 3: Compose unavailable reply
 # ─────────────────────────────────────────────
-def compose_unavailable_reply_llm(email: dict[str, str], details: dict[str, Any]) -> str:
-    """
-    Ask Claude to write a polite reply explaining that we are unavailable.
-    Returns the reply body as a string.
-    """
-    prompt = f"""You are writing a professional email reply on behalf of Yefet Meshulam and Adir Nachmiass.
+def compose_unavailable_reply(email: dict[str, str], details: dict[str, Any]) -> str:
+    date_str = details.get("date") or "המועד שהוצע"
+    time_str = details.get("time") or ""
+    when = f"{date_str} {time_str}".strip()
 
-Original email subject: {email['subject']}
-Sender: {email['from']}
-Proposed meeting date: {details.get('date', 'unknown')} at {details.get('time', 'unknown')}
-
-Write a polite, short reply (3-5 sentences) in the SAME LANGUAGE as the original email,
-explaining that we cannot make the proposed time and suggesting to reschedule.
-Return ONLY the email body text, no subject line, no extra formatting.
-"""
-    try:
-        response = anthropic_client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text.strip()
-    except Exception as e:
-        print(f"[LLM reply fallback] {e}")
-        return (
-            "שלום,\n\n"
-            "תודה על ההזמנה לפגישה.\n"
-            "לצערנו איננו פנויים במועד שהוצע. נשמח לתאם מועד חלופי.\n\n"
-            "בברכה,\n"
-            "יפת משולם ואדיר נחמיאס\n"
-        )
+    return (
+        f"שלום,\n\n"
+        f"תודה על ההזמנה לפגישה.\n"
+        f"בדקנו את היומן שלנו ולצערנו איננו פנויים ב-{when}.\n"
+        f"נשמח לתאם מועד חלופי שיתאים לשני הצדדים.\n\n"
+        f"בברכה,\n"
+        f"יפת משולם ואדיר נחמיאס\n"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -307,12 +209,12 @@ def create_calendar_event(
 
 
 # ─────────────────────────────────────────────
-#  Gmail – draft helpers
+#  Gmail – draft helper
 # ─────────────────────────────────────────────
 def create_unavailable_draft(
     gmail_service, original_email: dict[str, str], details: dict[str, Any]
 ):
-    reply_body = compose_unavailable_reply_llm(original_email, details)
+    reply_body = compose_unavailable_reply(original_email, details)
 
     msg = EmailMessage()
     msg["To"] = original_email["from"]
@@ -354,30 +256,27 @@ def run_agent():
         print(f"Subject : {email['subject']}")
         print(f"From    : {email['from']}")
 
-        # ── Step 1: Is this a meeting request? (LLM) ──────────
-        if not detect_meeting_request_llm(email):
+        # ── Step 1: Is this a meeting request? ────────────────
+        if not detect_meeting_request(email):
             print("→ Not a meeting request. Skipping.\n")
             continue
 
         print("→ Meeting request detected!")
 
-        # ── Step 2: Extract details (LLM) ─────────────────────
-        details = extract_meeting_details_llm(email)
+        # ── Step 2: Extract details ────────────────────────────
+        details = extract_meeting_details(email)
 
         # ── Step 3: Parse date/time ────────────────────────────
         start_time = parse_datetime(details.get("date"), details.get("time"))
 
         if start_time is None:
-            print(
-                "→ Could not determine date/time from email. "
-                "Skipping calendar action.\n"
-            )
+            print("→ Could not determine date/time. Skipping calendar action.\n")
             continue
 
         end_time = start_time + timedelta(hours=1)
         print(f"→ Proposed time: {start_time.strftime('%d/%m/%Y %H:%M')}")
 
-        # ── Step 4: Check calendar availability ───────────────
+        # ── Step 4: Check calendar & act ──────────────────────
         if is_calendar_free(calendar_service, start_time, end_time):
             event_id, event_link = create_calendar_event(
                 calendar_service, details, start_time, end_time
